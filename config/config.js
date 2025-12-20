@@ -79,7 +79,7 @@ const config = {
 
     delays: {
         authenticated: {
-            messageDelay: 0,
+            messageDelay:1000,
             maxConcurrentDownloads: 10,
             messagesPerHour: 50
         },
