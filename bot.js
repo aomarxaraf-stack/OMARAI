@@ -124,7 +124,7 @@ function calculateSimilarity(str1, str2) {
 
 async function searchAPKPure(query, num = 10) {
     try {
-        const [searchResponse, an1Response, apkmbResponse, gamessapkResponse] = await Promise.all([
+        const [searchResponse, an1Response, apkmbResponse, gamessapkResponse, traidSoftResponse] = await Promise.all([
             axios.get(`${API_SERVER_URL}/search`, {
                 params: { q: query, num },
                 timeout: 15000
@@ -140,6 +140,10 @@ async function searchAPKPure(query, num = 10) {
             axios.get(`${API_SERVER_URL}/search-gamessapk`, {
                 params: { q: query, num: 5 },
                 timeout: 15000
+            }).catch(e => ({ data: { results: [] } })),
+            axios.get(`${API_SERVER_URL}/search-traidsoft`, {
+                params: { q: query, num: 5 },
+                timeout: 15000
             }).catch(e => ({ data: { results: [] } }))
         ]);
         
@@ -147,8 +151,9 @@ async function searchAPKPure(query, num = 10) {
         const an1Results = an1Response.data.results || [];
         const apkmbResults = apkmbResponse.data.results || [];
         const gamessapkResults = gamessapkResponse.data.results || [];
+        const traidSoftResults = traidSoftResponse.data.results || [];
         
-        const combined = [...normalResults, ...an1Results, ...apkmbResults, ...gamessapkResults];
+        const combined = [...normalResults, ...an1Results, ...apkmbResults, ...gamessapkResults, ...traidSoftResults];
         
         combined.forEach(app => {
             app.similarity = calculateSimilarity(query, app.title || app.name || '');
@@ -156,7 +161,7 @@ async function searchAPKPure(query, num = 10) {
         
         combined.sort((a, b) => b.similarity - a.similarity);
         
-        console.log(`[Search] Found ${normalResults.length} APKPure + ${an1Results.length} AN1 + ${apkmbResults.length} GetModsAPK + ${gamessapkResults.length} GamesAPK (sorted by similarity)`);
+        console.log(`[Search] Found ${normalResults.length} APKPure + ${an1Results.length} AN1 + ${apkmbResults.length} GetModsAPK + ${gamessapkResults.length} GamesAPK + ${traidSoftResults.length} TraidSoft (sorted by similarity)`);
         return combined;
     } catch (error) {
         console.error('[Search] Error:', error.message);
@@ -3652,7 +3657,7 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
         return;
     }
 
-    // Handle mod download (AN1, GetModsAPK, GamesAPK)
+    // Handle mod download (AN1, GetModsAPK, GamesAPK, TraidSoft)
     if (isModDownload) {
         let downloadUrl = null;
         
@@ -3662,6 +3667,8 @@ async function handleAppDownload(sock, remoteJid, userId, senderPhone, msg, appI
             downloadEndpoint = '/apkmb-download';
         } else if (modSource === 'GamesAPK') {
             downloadEndpoint = '/gamessapk-download';
+        } else if (modSource === 'TraidSoft') {
+            downloadEndpoint = '/traidsoft-download';
         } else {
             downloadEndpoint = '/an1-download';
         }
