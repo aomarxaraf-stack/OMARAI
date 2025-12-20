@@ -576,6 +576,174 @@ async def get_getmodsapk_download_link(page_url: str) -> Optional[Dict[str, Any]
         traceback.print_exc()
         return None
 
+async def search_traidsoft(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
+    """Search traidsoft.net for modded APKs and apps"""
+    try:
+        print(f"[TraidSoft] Searching: {query}", file=sys.stderr)
+        search_url = f"https://app.traidsoft.net/?s={quote_plus(query)}"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+        }
+        
+        loop = asyncio.get_event_loop()
+        html = await loop.run_in_executor(
+            None,
+            lambda: requests.get(search_url, headers=headers, timeout=20).text
+        )
+        
+        if not html:
+            print(f"[TraidSoft] Failed to fetch search page", file=sys.stderr)
+            return []
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        results = []
+        seen_urls = set()
+        
+        app_links = soup.find_all('a', href=re.compile(r'app\.traidsoft\.net/download-[a-z0-9-]+/?'))
+        
+        for a in app_links:
+            if len(results) >= num_results:
+                break
+                
+            href = a.get('href', '')
+            if not href or href in seen_urls:
+                continue
+            
+            if '/mod-apps/' in href or '/page/' in href or '/category/' in href:
+                seen_urls.add(href)
+            
+            seen_urls.add(href)
+            
+            title = a.get('title') or a.get_text(strip=True)
+            if not title or len(title) < 3:
+                slug = href.rstrip('/').split('/')[-1]
+                title = slug.replace('-', ' ').title()
+            
+            if not title or len(title) < 3:
+                continue
+            
+            parent = a.find_parent(['div', 'li', 'article'])
+            img = a.find('img') or (parent.find('img') if parent else None)
+            icon = ''
+            if img:
+                icon_src = img.get('src') or img.get('data-src') or img.get('data-lazy-src') or ''
+                if icon_src:
+                    icon = icon_src
+            
+            slug = href.rstrip('/').split('/')[-1]
+            
+            results.append({
+                "title": title + " (مهكرة)",
+                "url": href if href.startswith('http') else f"https://app.traidsoft.net{href}",
+                "appId": slug,
+                "icon": icon,
+                "source": "TraidSoft",
+                "isMod": True
+            })
+        
+        print(f"[TraidSoft] Found {len(results)} results", file=sys.stderr)
+        return results
+        
+    except Exception as e:
+        print(f"[TraidSoft] Search error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return []
+
+async def get_traidsoft_download_link(page_url: str) -> Optional[Dict[str, Any]]:
+    """Extract download links from TraidSoft page"""
+    try:
+        print(f"[TraidSoft] Getting download link from: {page_url}", file=sys.stderr)
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+            'Referer': page_url,
+        }
+        
+        loop = asyncio.get_event_loop()
+        html = await loop.run_in_executor(
+            None,
+            lambda: requests.get(page_url, headers=headers, timeout=20).text
+        )
+        
+        if not html:
+            print(f"[TraidSoft] Failed to fetch page", file=sys.stderr)
+            return None
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        download_links = []
+        
+        mediafire_links = soup.find_all('a', href=re.compile(r'mediafire\.com'))
+        for link in mediafire_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True) or 'MediaFire Download'
+            if href and href.startswith('http'):
+                download_links.append({
+                    "url": href,
+                    "name": text,
+                    "type": "mediafire"
+                })
+        
+        mega_links = soup.find_all('a', href=re.compile(r'mega\.nz'))
+        for link in mega_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True) or 'MEGA Download'
+            if href and href.startswith('http'):
+                download_links.append({
+                    "url": href,
+                    "name": text,
+                    "type": "mega"
+                })
+        
+        direct_apk_links = soup.find_all('a', href=re.compile(r'\.apk(\?|$)'))
+        for link in direct_apk_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True) or 'Direct APK'
+            if href and href.startswith('http'):
+                download_links.append({
+                    "url": href,
+                    "name": text,
+                    "type": "direct"
+                })
+        
+        if download_links:
+            primary_link = None
+            for dl in download_links:
+                if dl['type'] == 'mediafire':
+                    primary_link = dl['url']
+                    break
+            
+            if not primary_link and download_links:
+                for dl in download_links:
+                    if dl['type'] in ['direct', 'mega']:
+                        primary_link = dl['url']
+                        break
+            
+            if not primary_link and download_links:
+                primary_link = download_links[0]['url']
+            
+            print(f"[TraidSoft] Found {len(download_links)} download links", file=sys.stderr)
+            return {
+                "download_url": primary_link,
+                "all_links": download_links,
+                "source": "TraidSoft",
+                "page_url": page_url
+            }
+        
+        print(f"[TraidSoft] No download links found", file=sys.stderr)
+        return None
+        
+    except Exception as e:
+        print(f"[TraidSoft] Download error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return None
+
 MOD_SOURCES = [
     {"name": "AN1", "search_url": "https://an1.com/?do=search&subaction=search&story={query}", "base_url": "https://an1.com"},
 ]
@@ -1811,6 +1979,38 @@ async def get_mod_download_info(url: str, source: str = ""):
     
     return {
         **info,
+        "warning": "⚠️ Modded APKs may contain malware. Install at your own risk."
+    }
+
+@app.get("/search-traidsoft")
+async def search_traidsoft_apps(q: str, num: int = 10):
+    """Search TraidSoft.net for modded apps (مهكرة)"""
+    if not q or len(q.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Search query is required")
+    
+    results = await search_traidsoft(q.strip(), min(num, 20))
+    
+    return {
+        "query": q,
+        "count": len(results),
+        "results": results,
+        "source": "TraidSoft",
+        "warning": "⚠️ Modded APKs may contain security risks. Download at your own risk."
+    }
+
+@app.get("/traidsoft-download")
+async def get_traidsoft_download(url: str):
+    """Get download links from TraidSoft page URL"""
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    
+    download_info = await get_traidsoft_download_link(url)
+    
+    if not download_info:
+        raise HTTPException(status_code=404, detail="Could not find download links")
+    
+    return {
+        **download_info,
         "warning": "⚠️ Modded APKs may contain malware. Install at your own risk."
     }
 
